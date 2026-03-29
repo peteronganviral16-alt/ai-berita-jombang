@@ -1,120 +1,139 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-import urllib.parse
 from datetime import datetime
+import urllib.parse
 
-# --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="AI Jurnalis Jombang", page_icon="📝", layout="wide")
+# --- CONFIG HALAMAN ---
+st.set_page_config(
+    page_title="AI Jurnalis Jombang - Blog Generator", 
+    page_icon="🏢", 
+    layout="wide"
+)
 
-# --- DATABASE KECAMATAN JOMBANG ---
-KECAMATAN = ["Jombang Kota", "Mojoagung", "Ploso", "Jogoroto", "Perak", "Ngoro", "Diwek", "Sumobito", "Tembelang", "Kesamben", "Kudu", "Ngusikan"]
+# --- CSS CUSTOM UNTUK TAMPILAN HP ---
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f5f7f9;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 10px;
+        height: 3em;
+        background-color: #007bff;
+        color: white;
+    }
+    .stTextArea>div>div>textarea {
+        background-color: #ffffff;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- FUNGSI SCRAPER TINGKAT LANJUT ---
-def extract_news_advanced(url):
+# --- FUNGSI UTAMA: SCRAPER & BLOG GENERATOR ---
+def generate_blog_article(url):
     try:
-        # Header agar tidak terbaca sebagai Robot/Bot
+        # Header agar tidak diblokir server berita
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
         }
-        
         response = requests.get(url, headers=headers, timeout=15)
         response.encoding = response.apparent_encoding
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. Cari Judul (Cek berbagai tag umum)
-        title = ""
-        h1_tag = soup.find('h1')
-        meta_og_title = soup.find('meta', property='og:title')
-        
-        if h1_tag:
-            title = h1_tag.get_text(strip=True)
-        elif meta_og_title:
-            title = meta_og_title['content']
+        # 1. Ambil Judul Asli
+        original_title = ""
+        if soup.find('h1'):
+            original_title = soup.find('h1').get_text(strip=True)
+        elif soup.find('meta', property='og:title'):
+            original_title = soup.find('meta', property='og:title')['content']
         else:
-            title = "Berita Lokal Terkini"
+            original_title = "Berita Terbaru Jombang"
 
-        # 2. Cari Isi Berita (Filter paragraf yang terlalu pendek/menu)
+        # 2. Ambil Isi Berita (Filter paragraf bermutu)
         paragraphs = soup.find_all('p')
-        content_list = []
+        raw_text = []
         for p in paragraphs:
-            text = p.get_text(strip=True)
-            # Hanya ambil paragraf yang terlihat seperti berita (minimal 60 karakter)
-            if len(text) > 60 and "iklan" not in text.lower() and "baca juga" not in text.lower():
-                content_list.append(text)
+            txt = p.get_text(strip=True)
+            if len(txt) > 60 and "baca juga" not in txt.lower() and "iklan" not in txt.lower():
+                raw_text.append(txt)
         
-        # Gabungkan 3 paragraf pertama agar padat
-        final_content = " ".join(content_list[:3])
-        
-        if not final_content:
-            return title, "Gagal menarik isi berita secara otomatis. Situs ini mungkin dilindungi. Silakan salin teks manual ke tab 'Tulis Berita Manual'."
+        if not raw_text:
+            return None, None, None
 
-        return title, final_content
+        # --- PROSES REWRITE JADI ARTIKEL BLOG ---
+        new_title = f"{original_title} - Update Terkini Wilayah Jombang"
+        tgl_skrg = datetime.now().strftime("%d %B %Y")
+        
+        # Menyusun konten dengan struktur HTML Blogspot
+        intro = f"Kabar terbaru datang dari Kabupaten Jombang hari ini, {tgl_skrg}. Informasi mengenai <strong>{original_title}</strong> tengah menjadi perbincangan hangat di tengah masyarakat lokal."
+        
+        p1 = f"Berdasarkan penelusuran tim di lapangan, kejadian ini bermula saat {raw_text[0] if len(raw_text) > 0 else 'informasi mulai tersebar luas di media sosial'}. Hal ini memicu respon dari berbagai pihak terkait di wilayah Jombang."
+        
+        p2 = f"Lebih lanjut, dilaporkan bahwa {raw_text[1] if len(raw_text) > 1 else 'situasi saat ini masih dalam pemantauan petugas berwenang'}. Warga diharapkan tetap tenang dan mengikuti instruksi resmi agar tidak termakan isu yang belum jelas kebenarannya."
+        
+        kesimpulan = "Demikian laporan terkini mengenai situasi di Jombang. Kami akan terus memperbarui informasi ini jika terdapat perkembangan terbaru dari pihak terkait."
+
+        # Gabungkan dalam format HTML Blogspot
+        html_blogspot = f"""
+<h2>{new_title}</h2>
+<p><strong>JOMBANG</strong> - {intro}</p>
+<p>{p1}</p>
+<h3>Kondisi Terkini di Lapangan</h3>
+<p>{p2}</p>
+<hr>
+<p><i>{kesimpulan}</i></p>
+<p><strong>Tags:</strong> #Jombang #KabarJombang #BeritaJombang #JombangHariIni</p>
+        """
+        
+        # Ringkasan untuk Share WA
+        wa_text = f"*{new_title}*\n\nJOMBANG - {intro[:150]}...\n\nBaca selengkapnya di Blog kami!"
+        
+        return new_title, html_blogspot, wa_text
 
     except Exception as e:
-        return "Error Koneksi", f"Gagal mengakses link. Pastikan link benar. Error: {str(e)}"
+        return f"Error: {str(e)}", None, None
 
-# --- FUNGSI REWRITE (MENYUSUN ULANG) ---
-def format_whatsapp_msg(title, content, mode, location="Jombang"):
-    header = "📢 *KABAR JOMBANG TERKINI*" if mode == "Santai" else "📰 *RILIS BERITA RESMI*"
-    
-    msg = f"{header}\n\n"
-    msg += f"*TOPIK:* {title.upper()}\n"
-    msg += f"*LOKASI:* {location}\n\n"
-    msg += f"*RINGKASAN KEJADIAN:* \n{content}\n\n"
-    msg += f"--- \n_Diterbitkan otomatis via AI Jurnalis Jombang pada {datetime.now().strftime('%d/%m/%Y %H:%M')}_"
-    return msg
-
-# --- TAMPILAN DASHBOARD ---
-st.markdown("<h1 style='text-align: center;'>🛡️ AI Jurnalis Pribadi Jombang</h1>", unsafe_allow_html=True)
+# --- ANTARMUKA PENGGUNA (UI) ---
+st.markdown("<h1 style='text-align: center; color: #1e3d59;'>🏢 Jombang Blog Generator</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>Ubah Link Berita Lokal Jadi Artikel Blog Baru</p>", unsafe_allow_html=True)
 st.divider()
 
-tab1, tab2 = st.tabs(["🔗 Olah dari Link", "✍️ Tulis Berita Manual"])
+# Input Link
+url_target = st.text_input("🔗 Tempel Link Berita Sumber (Radar, Beritajatim, dll):", placeholder="https://radarjombang.jawapos.com/...")
 
-# --- TAB 1: DARI LINK ---
-with tab1:
-    st.subheader("Otomatiskan Link Berita Jadi Pesan WA")
-    link_input = st.text_input("Tempel Link Berita (Beritajatim/Radar/Detik):")
-    loc_1 = st.selectbox("Pilih Lokasi Kejadian", KECAMATAN, key="loc1")
-    gaya_1 = st.selectbox("Gaya Penulisan", ["Formal (Rilis)", "Santai (Grup WA)"], key="style1")
-    
-    if st.button("Proses Link Sekarang"):
-        if link_input:
-            with st.spinner("Sedang menembus server berita..."):
-                t, c = extract_news_advanced(link_input)
-                hasil = format_whatsapp_msg(t, c, gaya_1, loc_1)
-                
-                st.success("Berita Berhasil Disusun!")
-                st.text_area("Pratinjau Teks:", hasil, height=300)
-                
-                # Link WhatsApp
-                encoded_msg = urllib.parse.quote(hasil)
-                wa_url = f"https://wa.me/?text={encoded_msg}"
-                st.markdown(f'<a href="{wa_url}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold;">Kirim ke WhatsApp ✅</button></a>', unsafe_allow_html=True)
-        else:
-            st.warning("Masukkan link dulu!")
-
-# --- TAB 2: MANUAL ---
-with tab2:
-    st.subheader("Buat Berita Sendiri (Laporan Warga)")
-    t_man = st.text_input("Apa kejadiannya? (Contoh: Pohon Tumbang)")
-    loc_2 = st.selectbox("Lokasi Kejadian", KECAMATAN, key="loc2")
-    isi_man = st.text_area("Ceritakan detail kejadiannya (Siapa, Jam Berapa, Kronologi):")
-    gaya_2 = st.selectbox("Gaya Penulisan", ["Formal (Rilis)", "Santai (Grup WA)"], key="style2")
-
-    if st.button("Buat Berita Manual"):
-        if t_man and isi_man:
-            hasil_m = format_whatsapp_msg(t_man, isi_man, gaya_2, loc_2)
-            st.success("Draf Berita Siap!")
-            st.text_area("Pratinjau Teks:", hasil_m, height=250)
+if st.button("🚀 Generate Artikel Baru"):
+    if url_target:
+        with st.spinner("AI sedang meriset dan menulis ulang..."):
+            judul, html_code, wa_msg = generate_blog_article(url_target)
             
-            # Link WhatsApp
-            encoded_msg_m = urllib.parse.quote(hasil_m)
-            wa_url_m = f"https://wa.me/?text={encoded_msg_m}"
-            st.markdown(f'<a href="{wa_url_m}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold;">Kirim ke WhatsApp ✅</button></a>', unsafe_allow_html=True)
-        else:
-            st.warning("Mohon isi judul dan kronologi kejadian.")
+            if html_code:
+                st.success("Artikel Siap Diunggah ke Blogspot!")
+                
+                # Tampilan Preview
+                with st.expander("👁️ Pratinjau Tampilan di Blog", expanded=True):
+                    st.markdown(html_code, unsafe_allow_html=True)
+                
+                st.divider()
+                
+                # Bagian Copy Paste
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    st.subheader("📌 Judul Postingan")
+                    st.code(judul)
+                    
+                    st.subheader("HTML Code (Paste di Blogspot)")
+                    st.code(html_code, language="html")
+                    st.caption("Gunakan mode 'Tampilan HTML' di editor Blogspot saat menempel kode ini.")
+                
+                with col_right:
+                    st.subheader("📲 Bagikan ke WhatsApp")
+                    st.write("Gunakan ini untuk promosi artikel blog baru kamu:")
+                    wa_url = f"https://wa.me/?text={urllib.parse.quote(wa_msg)}"
+                    st.markdown(f'<a href="{wa_url}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; cursor:pointer;">Share Ringkasan ke WA ✅</button></a>', unsafe_allow_html=True)
+            else:
+                st.error("Gagal mengambil data. Pastikan link berita valid atau coba link media lain.")
 
 st.divider()
-st.caption("AI Jurnalis Jombang v1.1 - Membantu warga mendapatkan informasi terverifikasi.")
+st.caption("AI Jurnalis Jombang v2.0 - Membantu Kreator Blog Lokal Jombang")
