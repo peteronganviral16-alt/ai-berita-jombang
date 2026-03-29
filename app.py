@@ -4,17 +4,17 @@ from bs4 import BeautifulSoup
 import google.generativeai as genai
 import urllib.parse
 
-# --- KONFIGURASI AI ---
-# API Key kamu tetap aman
+# --- KONFIGURASI API ---
+# API Key Anda
 API_KEY = "AIzaSyBg0-0TwWSyHE577XfDugE3spu3QzP6-TY"
 genai.configure(api_key=API_KEY)
 
-# PERBAIKAN: Menggunakan nama model yang lebih stabil
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+# PERBAIKAN: Menggunakan pemanggilan model yang paling kompatibel
+model = genai.GenerativeModel('gemini-pro') 
 
-st.set_page_config(page_title="AI Jurnalis Jombang Pro", page_icon="📝")
+st.set_page_config(page_title="AI Jurnalis Jombang", page_icon="📝")
 
-# --- CSS CUSTOM ---
+# --- CSS SEDERHANA ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -22,61 +22,58 @@ st.markdown("""
         border-radius: 10px;
         background-color: #1e3d59;
         color: white;
-        font-weight: bold;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNGSI UTAMA ---
-def generate_rewrite_ai(url):
+# --- FUNGSI PROSES ---
+def proses_berita(url):
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
-        response = requests.get(url, headers=headers, timeout=20)
-        response.encoding = response.apparent_encoding
+        res = requests.get(url, headers=headers, timeout=20)
+        res.encoding = res.apparent_encoding
         
-        if response.status_code != 200:
-            return f"Error: Gagal akses situs (Status {response.status_code})", None, None
+        if res.status_code != 200:
+            return f"Koneksi Gagal (Status {res.status_code})", None, None
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(res.text, 'html.parser')
         
-        # Ambil Judul & Konten
-        title_tag = soup.find('h1')
-        title_ori = title_tag.get_text(strip=True) if title_tag else "Berita Jombang"
+        # Ambil Judul & Isi
+        h1 = soup.find('h1')
+        t_asli = h1.get_text(strip=True) if h1 else "Berita Jombang"
         
-        paragraphs = soup.find_all('p')
-        content_list = [p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 50]
-        content_ori = " ".join(content_list[:8])
+        p_tags = soup.find_all('p')
+        isi_asli = " ".join([p.get_text(strip=True) for p in p_tags if len(p.get_text(strip=True)) > 50])
 
-        if len(content_ori) < 100:
-            return "Error: Isi berita tidak terbaca atau terlalu pendek.", None, None
+        if len(isi_asli) < 100:
+            return "Isi berita tidak terdeteksi.", None, None
 
-        # --- PROMPT TANPA TEMPLATE ---
+        # --- PERINTAH AI (REWRITE) ---
         prompt = f"""
-        Tulis ulang berita berikut menjadi artikel blog 5 paragraf yang unik dan segar.
-        Instruksi:
-        1. Jangan pakai template kaku. Gunakan gaya bahasa jurnalis asli.
-        2. Tulis dalam Bahasa Indonesia yang baik untuk warga Jombang.
-        3. Berikan judul baru yang menarik dan berbeda dari aslinya.
-        4. Artikel harus mengalir natural tanpa iklan.
+        Tulis ulang berita berikut menjadi artikel blog 5 paragraf yang unik.
+        Aturan:
+        1. JANGAN gunakan template. Tulis ulang total dengan kata-kata baru.
+        2. Gaya bahasa jurnalisme santun Jombang.
+        3. Buat judul baru yang menarik.
+        4. Artikel harus mengalir alami, hilangkan semua iklan.
         
-        Berita Asli: {content_ori}
+        Isi Berita Sumber: {isi_asli[:2000]}
         """
         
         # Eksekusi AI
-        response_ai = model.generate_content(prompt)
-        full_text = response_ai.text.strip()
+        response = model.generate_content(prompt)
+        teks_ai = response.text.strip()
         
-        # Pisahkan Judul dan Isi
-        lines = full_text.split('\n', 1)
-        judul_baru = lines[0].replace('#', '').strip()
-        isi_baru = lines[1].strip() if len(lines) > 1 else full_text
+        # Olah hasil
+        baris = teks_ai.split('\n')
+        judul_baru = baris[0].replace('*', '').strip()
+        isi_baru = "\n\n".join(baris[1:]).strip()
 
         # Format HTML
-        paragraf_html = isi_baru.split('\n')
         html_out = f"<h2>{judul_baru}</h2>"
-        for p in paragraf_html:
+        for p in baris[1:]:
             if len(p.strip()) > 10:
                 html_out += f"<p>{p.strip()}</p>"
         html_out += "<br><p><strong>Tags:</strong> #Jombang #KabarJombang #UpdateJombang</p>"
@@ -84,32 +81,30 @@ def generate_rewrite_ai(url):
         return judul_baru, html_out, isi_baru
 
     except Exception as e:
-        return f"Error: {str(e)}", None, None
+        return f"Sistem Error: {str(e)}", None, None
 
 # --- UI ---
-st.markdown("<h1 style='text-align: center;'>🛡️ AI Jurnalis Jombang Pro</h1>", unsafe_allow_html=True)
+st.title("🛡️ AI Jurnalis Jombang")
+st.write("Teknologi Rewrite Otomatis - Tanpa Template")
 st.divider()
 
-url_input = st.text_input("🔗 Tempel Link Berita Sumber:", placeholder="https://...")
+link = st.text_input("Tempel Link Berita:")
 
-if st.button("🚀 Generate Ulang (Rewrite Cerdas)"):
-    if url_input:
-        with st.spinner("AI sedang merangkai kata..."):
-            j, h, t = generate_rewrite_ai(url_input)
+if st.button("Generate Sekarang"):
+    if link:
+        with st.spinner("AI sedang menulis ulang..."):
+            j, h, t = proses_berita(link)
             
-            if h and "Error" not in j:
-                st.success("Berita Berhasil Ditulis Ulang!")
-                with st.expander("👁️ Pratinjau", expanded=True):
+            if h and "Error" not in j and "Sistem" not in j:
+                st.success("Berhasil!")
+                with st.expander("Pratinjau", expanded=True):
                     st.markdown(h, unsafe_allow_html=True)
                 
-                st.write("### 💻 Copy Kode HTML:")
+                st.write("### Kode HTML Blogspot:")
                 st.code(h, language="html")
                 
-                wa_msg = f"*{j}*\n\n{t[:200]}...\n\nBaca selengkapnya di Blog!"
-                wa_link = f"https://wa.me/?text={urllib.parse.quote(wa_msg)}"
-                st.markdown(f'<a href="{wa_link}" target="_blank"><button style="width:100%;background-color:#25D366;color:white;border:none;padding:12px;border-radius:10px;font-weight:bold;cursor:pointer;">Share ke WhatsApp</button></a>', unsafe_allow_html=True)
+                msg = f"*{j}*\n\n{t[:200]}...\n\nBaca di Blog!"
+                wa = f"https://wa.me/?text={urllib.parse.quote(msg)}"
+                st.markdown(f'<a href="{wa}" target="_blank"><button style="width:100%;background-color:#25D366;color:white;border:none;padding:12px;border-radius:10px;font-weight:bold;cursor:pointer;">Share ke WhatsApp</button></a>', unsafe_allow_html=True)
             else:
-                st.error(f"{j}")
-
-st.divider()
-st.caption("AI Jurnalis v3.6 - Fixed Model Issue")
+                st.error(j)
